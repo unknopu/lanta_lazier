@@ -6,6 +6,7 @@ set -euo pipefail
 # This script connects to the LANTA transfer node and handles a few common
 # account and file tasks:
 #   - show your job queue
+#   - cancel all jobs shown by myqueue
 #   - show your compute balance
 #   - discover home/project paths from myquota
 #   - submit the shared Jupyter GPU job script
@@ -65,6 +66,7 @@ Options:
       Runtime for the Jupyter GPU job submitted with --init.
       Runtime must be at least 30 minutes and no more than 24 hours.
       If omitted, the script prompts and defaults to 1:00.
+      When running through curl | bash without terminal input, it uses 1:00.
 
   -q, --queue
       Show your LANTA job queue by running myqueue on the transfer node.
@@ -81,7 +83,8 @@ Options:
   --init
       Check that the shared Jupyter GPU job script exists, copy it to home_path,
       replace the account suffix 1xxx with 2005, then submit it with sbatch.
-      When the Jupyter URL appears, forward it to localhost:80, 8080, or 8888.
+      When the Jupyter URL appears, forward it to localhost:80, 8080, 8888,
+      9000, or 9999. The final output prints forwarded_url and token.
       This command exits after initialization.
 
   -h, --help
@@ -100,6 +103,11 @@ Examples:
   ${SCRIPT_NAME} -u myname --time 2:00 --init
   ${SCRIPT_NAME} -u myname --upload ./data
   ${SCRIPT_NAME} -u myname --upload ./data /project/<project-id>/
+
+Curl examples:
+  curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --init
+  curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --time 2:00 --init
+  curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --clear-all
 EOF
 }
 
