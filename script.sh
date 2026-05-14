@@ -132,6 +132,54 @@ local_port_busy() {
   return 1
 }
 
+local_port_listener_pids() {
+  local port="$1"
+
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -tiTCP:"${port}" -sTCP:LISTEN
+  fi
+}
+
+confirm_clear_local_port() {
+  local port="$1"
+  local pids
+  local answer
+
+  pids=$(local_port_listener_pids "${port}" | tr '\n' ' ')
+  if [[ -z "${pids// }" ]]; then
+    printf 'local port %s is busy, but no listener PID could be detected; trying next port\n' "${port}"
+    return 1
+  fi
+
+  printf 'local port %s is busy:\n' "${port}"
+  lsof -n -P -iTCP:"${port}" -sTCP:LISTEN || true
+  printf 'Stop the process(es) using local port %s and retry this port? [y/N] ' "${port}"
+
+  if ! read -r answer; then
+    answer=""
+  fi
+
+  case "${answer}" in
+    y|Y|yes|YES)
+      if ! kill ${pids}; then
+        printf 'could not stop process(es) using local port %s; trying next port\n' "${port}" >&2
+        return 1
+      fi
+      sleep 1
+      if local_port_busy "${port}"; then
+        printf 'local port %s is still busy after stopping process(es); trying next port\n' "${port}" >&2
+        return 1
+      fi
+      printf 'local port %s is now free; retrying this port\n' "${port}"
+      return 0
+      ;;
+    *)
+      printf 'keeping local port %s as-is, trying next port\n' "${port}"
+      return 1
+      ;;
+  esac
+}
+
 forward_jupyter_port() {
   local remote_output="$1"
   local jupyter_url
@@ -140,6 +188,8 @@ forward_jupyter_port() {
   local remote_port=""
   local local_port
   local forwarded_url
+  local jupyter_token
+  local token_regex='[?&]token=([^&#[:space:]]+)'
 
   jupyter_url=$(printf '%s\n' "${remote_output}" | sed -n 's/^jupyter_url=//p' | sed -n '1p')
   tunnel_spec=$(printf '%s\n' "${remote_output}" | sed -n 's/^tunnel_spec=//p' | sed -n '1p')
@@ -162,15 +212,20 @@ forward_jupyter_port() {
 
   for local_port in 80 8080 8888; do
     if local_port_busy "${local_port}"; then
-      printf 'local port %s is busy, trying next port\n' "${local_port}"
-      continue
+      if ! confirm_clear_local_port "${local_port}"; then
+        continue
+      fi
     fi
 
     printf 'forwarding localhost:%s -> %s:%s through %s\n' "${local_port}" "${target_host}" "${remote_port}" "${TUNNEL_HOST}"
     if ssh -f -N -o ExitOnForwardFailure=yes -L "${local_port}:${target_host}:${remote_port}" "${user}@${TUNNEL_HOST}"; then
       forwarded_url="${jupyter_url/127.0.0.1:${remote_port}/localhost:${local_port}}"
       printf "\n\n\n==================== YOUR URL ====================\n"
-      printf 'forwarded_url=%s\n' "${forwarded_url}\n"
+      printf 'forwarded_url=%s\n' "${forwarded_url}"
+      if [[ "${forwarded_url}" =~ ${token_regex} ]]; then
+        jupyter_token="${BASH_REMATCH[1]}"
+        printf 'token=%s\n' "${jupyter_token}"
+      fi
       printf "==================== YOUR URL ====================\n"
       return 0
     fi
