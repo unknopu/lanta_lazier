@@ -9,6 +9,7 @@ set -euo pipefail
 #   - cancel all jobs shown by myqueue
 #   - show your compute balance
 #   - discover home/project paths from myquota
+#   - generate and install your local SSH public key
 #   - submit the shared Jupyter GPU job script
 #   - upload local files/directories to LANTA
 #
@@ -35,6 +36,7 @@ show_queue="false"
 show_balance="false"
 init_env="false"
 clear_all="false"
+auto_pub_gen="false"
 
 home_path=""
 project_path=""
@@ -69,15 +71,23 @@ Options:
       When running through curl | bash without terminal input, it uses 1:00.
 
   -q, --queue
-      Show your LANTA job queue by running myqueue on the transfer node.
+      Show your LANTA job queue by running myqueue through the LANTA login shell.
       This command exits after displaying the queue.
 
   --clear-all
       Show your LANTA job queue, then cancel every listed job with scancel.
+      Uses the LANTA login shell so myqueue aliases/functions are available.
       This command exits after cancelling the jobs.
 
+  --auto-pub-gen
+      List local ~/.ssh, show ~/.ssh/id_ed25519.pub, create the key if missing,
+      then add the public key to remote ~/.ssh/authorized_keys.
+      Missing keys are created as Ed25519 keys with an empty passphrase.
+      Existing authorized_keys entries are detected and not duplicated.
+      This command exits after installing the key.
+
   -bl, --balance
-      Show your LANTA compute balance by running sbalance on the transfer node.
+      Show your LANTA compute balance by running sbalance through the LANTA login shell.
       This command exits after displaying the balance.
 
   --init
@@ -95,6 +105,7 @@ Default behavior:
   prints the detected home_path and project_path, then exits.
 
 Examples:
+  ${SCRIPT_NAME} -u myname --auto-pub-gen
   ${SCRIPT_NAME} --user myname
   ${SCRIPT_NAME} -u myname --queue
   ${SCRIPT_NAME} -u myname --clear-all
@@ -105,6 +116,7 @@ Examples:
   ${SCRIPT_NAME} -u myname --upload ./data /project/<project-id>/
 
 Curl examples:
+  curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --auto-pub-gen
   curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --init
   curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --time 2:00 --init
   curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --clear-all
@@ -128,6 +140,45 @@ require_value() {
 
 remote() {
   ssh "${user}@${TRANSFER_HOST}" "$@"
+}
+
+remote_transfer() {
+  ssh -n "${user}@${TRANSFER_HOST}" "$@"
+}
+
+shell_quote_args() {
+  local quoted=""
+  local arg
+  local arg_quoted
+
+  for arg in "$@"; do
+    printf -v arg_quoted '%q' "${arg}"
+    quoted+="${quoted:+ }${arg_quoted}"
+  done
+
+  printf '%s' "${quoted}"
+}
+
+single_quote() {
+  local value="$1"
+
+  printf "'%s'" "${value//\'/\'\\\'\'}"
+}
+
+remote_lanta_login() {
+  local command
+  local script
+
+  command=$(shell_quote_args "$@")
+  script=$'shopt -s expand_aliases\n'
+  script+=$'source /etc/profile >/dev/null 2>&1 || true\n'
+  script+=$'source ~/.bash_profile >/dev/null 2>&1 || true\n'
+  script+=$'source ~/.bash_login >/dev/null 2>&1 || true\n'
+  script+=$'source ~/.profile >/dev/null 2>&1 || true\n'
+  script+=$'source ~/.bashrc >/dev/null 2>&1 || true\n'
+  script+="${command}"
+
+  ssh -n "${user}@${TUNNEL_HOST}" "bash -lc $(single_quote "${script}")"
 }
 
 local_port_busy() {
@@ -241,6 +292,10 @@ parse_args() {
         clear_all="true"
         shift
         ;;
+      --auto-pub-gen)
+        auto_pub_gen="true"
+        shift
+        ;;
       -bl|--balance)
         show_balance="true"
         shift
@@ -266,7 +321,7 @@ parse_args() {
 load_lanta_paths() {
   local paths
 
-  paths=$(remote myquota | awk '/^\// {print $1}')
+  paths=$(remote_transfer myquota | awk '/^\// {print $1}')
   home_path=$(printf '%s\n' "${paths}" | sed -n '1p')
   project_path=$(printf '%s\n' "${paths}" | sed -n '2p')
 
@@ -340,11 +395,11 @@ normalize_running_time() {
 # Actions
 # ---------------------------------------------------------------------------
 show_remote_queue() {
-  remote myqueue
+  remote_lanta_login myqueue
 }
 
 show_remote_balance() {
-  remote sbalance
+  remote_lanta_login sbalance
 }
 
 clear_all_remote_jobs() {
@@ -352,7 +407,7 @@ clear_all_remote_jobs() {
   local job_ids
   local job_id
 
-  queue_output=$(remote myqueue)
+  queue_output=$(remote_lanta_login myqueue)
   printf '%s\n' "${queue_output}"
 
   job_ids=$(printf '%s\n' "${queue_output}" | awk '$1 ~ /^[0-9]+$/ {print $1}')
@@ -363,8 +418,62 @@ clear_all_remote_jobs() {
 
   for job_id in ${job_ids}; do
     printf 'scancel %s\n' "${job_id}"
-    remote scancel "${job_id}"
+    remote_lanta_login scancel "${job_id}"
   done
+}
+
+auto_pub_gen() {
+  local ssh_dir="${HOME}/.ssh"
+  local private_key="${ssh_dir}/id_ed25519"
+  local public_key="${private_key}.pub"
+  local public_key_value
+  local remote_script
+
+  printf 'local_ssh_dir=%s\n' "${ssh_dir}"
+  if [[ -d "${ssh_dir}" ]]; then
+    ls -la "${ssh_dir}"
+  else
+    mkdir -p "${ssh_dir}"
+    chmod 700 "${ssh_dir}"
+    printf 'created %s\n' "${ssh_dir}"
+  fi
+
+  if [[ -f "${public_key}" ]]; then
+    printf 'found %s\n' "${public_key}"
+  elif [[ -f "${private_key}" ]]; then
+    printf 'found %s but missing public key; regenerating %s\n' "${private_key}" "${public_key}"
+    ssh-keygen -y -f "${private_key}" >"${public_key}"
+    chmod 644 "${public_key}"
+  else
+    printf 'creating %s and %s\n' "${private_key}" "${public_key}"
+    ssh-keygen -q -t ed25519 -N "" -f "${private_key}" -C "${user}@lanta"
+    chmod 600 "${private_key}"
+    chmod 644 "${public_key}"
+  fi
+
+  public_key_value=$(sed -n '1p' "${public_key}")
+  if [[ -z "${public_key_value}" ]]; then
+    fail "Public key is empty: ${public_key}"
+  fi
+
+  printf '\npublic_key_file=%s\n' "${public_key}"
+  printf '%s\n\n' "${public_key_value}"
+
+  remote_script=$'set -euo pipefail\n'
+  remote_script+=$'umask 077\n'
+  remote_script+=$'public_key="$1"\n'
+  remote_script+=$'mkdir -p ~/.ssh\n'
+  remote_script+=$'touch ~/.ssh/authorized_keys\n'
+  remote_script+=$'chmod 700 ~/.ssh\n'
+  remote_script+=$'chmod 600 ~/.ssh/authorized_keys\n'
+  remote_script+=$'if grep -qxF "${public_key}" ~/.ssh/authorized_keys; then\n'
+  remote_script+=$'  printf "%s\\n" "public key already exists in ~/.ssh/authorized_keys"\n'
+  remote_script+=$'else\n'
+  remote_script+=$'  printf "%s\\n" "${public_key}" >> ~/.ssh/authorized_keys\n'
+  remote_script+=$'  printf "%s\\n" "public key added to ~/.ssh/authorized_keys"\n'
+  remote_script+=$'fi\n'
+
+  ssh "${user}@${TRANSFER_HOST}" bash -s -- "${public_key_value}" <<<"${remote_script}"
 }
 
 submit_jupyter_gpu_script() {
@@ -458,6 +567,11 @@ upload_to_lanta() {
 # ---------------------------------------------------------------------------
 main() {
   parse_args "$@"
+
+  if [[ "${auto_pub_gen}" == "true" ]]; then
+    auto_pub_gen
+    exit 0
+  fi
 
   load_lanta_paths
   print_lanta_paths
