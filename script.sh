@@ -271,9 +271,16 @@ normalize_running_time() {
   if [[ -z "${running_time}" ]]; then
     printf "\n--------------------\n"
     printf 'please specify running time (default 1h; hh:mm):\n'
-    if ! read -r running_time; then
+    if [[ -t 0 ]]; then
+      if ! read -r running_time; then
+        running_time=""
+      fi
+    elif ! { read -r running_time </dev/tty; } 2>/dev/null; then
+      running_time=""
+    else
       running_time=""
     fi
+
     if [[ -z "${running_time}" ]]; then
       running_time="1:00"
     fi
