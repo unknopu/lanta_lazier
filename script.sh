@@ -33,6 +33,7 @@ running_time=""
 show_queue="false"
 show_balance="false"
 init_env="false"
+clear_all="false"
 
 home_path=""
 project_path=""
@@ -69,6 +70,10 @@ Options:
       Show your LANTA job queue by running myqueue on the transfer node.
       This command exits after displaying the queue.
 
+  --clear-all
+      Show your LANTA job queue, then cancel every listed job with scancel.
+      This command exits after cancelling the jobs.
+
   -bl, --balance
       Show your LANTA compute balance by running sbalance on the transfer node.
       This command exits after displaying the balance.
@@ -89,6 +94,7 @@ Default behavior:
 Examples:
   ${SCRIPT_NAME} --user myname
   ${SCRIPT_NAME} -u myname --queue
+  ${SCRIPT_NAME} -u myname --clear-all
   ${SCRIPT_NAME} -u myname --balance
   ${SCRIPT_NAME} -u myname --init
   ${SCRIPT_NAME} -u myname --time 2:00 --init
@@ -223,6 +229,10 @@ parse_args() {
         show_queue="true"
         shift
         ;;
+      --clear-all)
+        clear_all="true"
+        shift
+        ;;
       -bl|--balance)
         show_balance="true"
         shift
@@ -329,6 +339,26 @@ show_remote_balance() {
   remote sbalance
 }
 
+clear_all_remote_jobs() {
+  local queue_output
+  local job_ids
+  local job_id
+
+  queue_output=$(remote myqueue)
+  printf '%s\n' "${queue_output}"
+
+  job_ids=$(printf '%s\n' "${queue_output}" | awk '$1 ~ /^[0-9]+$/ {print $1}')
+  if [[ -z "${job_ids}" ]]; then
+    printf '%s\n' 'No jobs found to cancel.'
+    return 0
+  fi
+
+  for job_id in ${job_ids}; do
+    printf 'scancel %s\n' "${job_id}"
+    remote scancel "${job_id}"
+  done
+}
+
 submit_jupyter_gpu_script() {
   local remote_output
   local staged_script
@@ -431,6 +461,11 @@ main() {
 
   if [[ "${show_balance}" == "true" ]]; then
     show_remote_balance
+    exit 0
+  fi
+
+  if [[ "${clear_all}" == "true" ]]; then
+    clear_all_remote_jobs
     exit 0
   fi
 
