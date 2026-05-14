@@ -171,7 +171,7 @@ forward_jupyter_port() {
       forwarded_url="${jupyter_url/127.0.0.1:${remote_port}/localhost:${local_port}}"
       printf "\n\n\n==================== YOUR URL ====================\n"
       printf 'forwarded_url=%s\n' "${forwarded_url}\n"
-      printf"==================== YOUR URL ====================\n"
+      printf "==================== YOUR URL ====================\n"
       return 0
     fi
 
