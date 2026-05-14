@@ -466,6 +466,14 @@ auto_pub_gen() {
   remote_script+=$'touch ~/.ssh/authorized_keys\n'
   remote_script+=$'chmod 700 ~/.ssh\n'
   remote_script+=$'chmod 600 ~/.ssh/authorized_keys\n'
+  remote_script+=$'if grep -qxF "ssh-ed25519" ~/.ssh/authorized_keys; then\n'
+  remote_script+=$'  tmp_file=$(mktemp)\n'
+  remote_script+=$'  awk '\''$0 != "ssh-ed25519" {print}'\'' ~/.ssh/authorized_keys > "${tmp_file}"\n'
+  remote_script+=$'  cat "${tmp_file}" > ~/.ssh/authorized_keys\n'
+  remote_script+=$'  rm -f "${tmp_file}"\n'
+  remote_script+=$'  chmod 600 ~/.ssh/authorized_keys\n'
+  remote_script+=$'  printf "%s\\n" "removed incomplete ssh-ed25519 entry from ~/.ssh/authorized_keys"\n'
+  remote_script+=$'fi\n'
   remote_script+=$'if grep -qxF "${public_key}" ~/.ssh/authorized_keys; then\n'
   remote_script+=$'  printf "%s\\n" "public key already exists in ~/.ssh/authorized_keys"\n'
   remote_script+=$'else\n'
@@ -473,7 +481,7 @@ auto_pub_gen() {
   remote_script+=$'  printf "%s\\n" "public key added to ~/.ssh/authorized_keys"\n'
   remote_script+=$'fi\n'
 
-  ssh "${user}@${TRANSFER_HOST}" bash -s -- "${public_key_value}" <<<"${remote_script}"
+  ssh "${user}@${TRANSFER_HOST}" "bash -s -- $(single_quote "${public_key_value}")" <<<"${remote_script}"
 }
 
 submit_jupyter_gpu_script() {
