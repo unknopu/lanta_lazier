@@ -451,7 +451,7 @@ auto_pub_gen() {
     chmod 644 "${public_key}"
   fi
 
-  public_key_value=$(sed -n '1p' "${public_key}")
+  public_key_value=$(cat "${public_key}")
   if [[ -z "${public_key_value}" ]]; then
     fail "Public key is empty: ${public_key}"
   fi
