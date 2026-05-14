@@ -132,54 +132,6 @@ local_port_busy() {
   return 1
 }
 
-local_port_listener_pids() {
-  local port="$1"
-
-  if command -v lsof >/dev/null 2>&1; then
-    lsof -tiTCP:"${port}" -sTCP:LISTEN
-  fi
-}
-
-confirm_clear_local_port() {
-  local port="$1"
-  local pids
-  local answer
-
-  pids=$(local_port_listener_pids "${port}" | tr '\n' ' ')
-  if [[ -z "${pids// }" ]]; then
-    printf 'local port %s is busy, but no listener PID could be detected; trying next port\n' "${port}"
-    return 1
-  fi
-
-  printf 'local port %s is busy:\n' "${port}"
-  lsof -n -P -iTCP:"${port}" -sTCP:LISTEN || true
-  printf 'Stop the process(es) using local port %s and retry this port? [y/N] ' "${port}"
-
-  if ! read -r answer; then
-    answer=""
-  fi
-
-  case "${answer}" in
-    y|Y|yes|YES)
-      if ! kill ${pids}; then
-        printf 'could not stop process(es) using local port %s; trying next port\n' "${port}" >&2
-        return 1
-      fi
-      sleep 1
-      if local_port_busy "${port}"; then
-        printf 'local port %s is still busy after stopping process(es); trying next port\n' "${port}" >&2
-        return 1
-      fi
-      printf 'local port %s is now free; retrying this port\n' "${port}"
-      return 0
-      ;;
-    *)
-      printf 'keeping local port %s as-is, trying next port\n' "${port}"
-      return 1
-      ;;
-  esac
-}
-
 forward_jupyter_port() {
   local remote_output="$1"
   local jupyter_url
@@ -210,11 +162,10 @@ forward_jupyter_port() {
     return 1
   fi
 
-  for local_port in 80 8080 8888; do
+  for local_port in 80 8080 8888 9000 9999; do
     if local_port_busy "${local_port}"; then
-      if ! confirm_clear_local_port "${local_port}"; then
-        continue
-      fi
+      printf 'local port %s is busy, trying next port\n' "${local_port}"
+      continue
     fi
 
     printf 'forwarding localhost:%s -> %s:%s through %s\n' "${local_port}" "${target_host}" "${remote_port}" "${TUNNEL_HOST}"
@@ -233,7 +184,7 @@ forward_jupyter_port() {
     printf 'could not use local port %s, trying next port\n' "${local_port}" >&2
   done
 
-  printf '%s\n' 'Could not forward Jupyter port. Tried local ports: 80, 8080, 8888.' >&2
+  printf '%s\n' 'Could not forward Jupyter port. Tried local ports: 80, 8080, 8888, 9000, 9999.' >&2
   return 1
 }
 
@@ -314,6 +265,8 @@ print_lanta_paths() {
 normalize_running_time() {
   local hours
   local minutes
+  local hours_value
+  local minutes_value
 
   if [[ -z "${running_time}" ]]; then
     printf "\n--------------------\n"
@@ -332,26 +285,30 @@ normalize_running_time() {
 
   hours="${BASH_REMATCH[1]}"
   minutes="${BASH_REMATCH[2]}"
+  hours_value=$((10#${hours}))
+  minutes_value=$((10#${minutes}))
 
-  if (( 10#${hours} == 0 && 10#${minutes} == 0 )); then
+  if (( hours_value == 0 && minutes_value == 0 )); then
     fail "Invalid --time value: 00:00 is not allowed."
   fi
 
-  if (( 10#${hours} < 0 || 10#${hours} > 24 )); then
+  if (( hours_value > 24 )); then
     fail "Invalid --time hours: ${hours}. Hours must be between 0 and 24."
   fi
 
-  if (( 10#${minutes} < 0 || 10#${minutes} > 59 )); then
+  if (( minutes_value > 59 )); then
     fail "Invalid --time minutes: ${minutes}. Minutes must be between 0 and 59."
   fi
 
-  if (( 10#${hours} == 24 && 10#${minutes} != 0 )); then
+  if (( hours_value == 24 && minutes_value != 0 )); then
     fail "Invalid --time value: ${running_time}. Maximum runtime is 24:00."
   fi
 
-  if (( (10#${hours} * 60 + 10#${minutes}) < 30 )); then
+  if (( (hours_value * 60 + minutes_value) < 30 )); then
     fail "Invalid --time value: ${running_time}. Runtime must be at least 30 minutes."
   fi
+
+  printf -v running_time '%d:%02d' "${hours_value}" "${minutes_value}"
 }
 
 # ---------------------------------------------------------------------------
