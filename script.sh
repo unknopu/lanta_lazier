@@ -6,7 +6,7 @@ set -euo pipefail
 # This script connects to the LANTA transfer node and handles a few common
 # account and file tasks:
 #   - show your job queue
-#   - cancel all jobs shown by myqueue
+#   - cancel all jobs shown by myqueue/squeue
 #   - show your compute balance
 #   - discover home/project paths from myquota
 #   - generate and install your local SSH public key
@@ -71,12 +71,14 @@ Options:
       When running through curl | bash without terminal input, it uses 1:00.
 
   -q, --queue
-      Show your LANTA job queue by running myqueue through the LANTA login shell.
+      Show your LANTA job queue by running myqueue when available, otherwise squeue.
       This command exits after displaying the queue.
 
   --clear-all
       Show your LANTA job queue, then cancel every listed job with scancel.
-      Uses the LANTA login shell so myqueue aliases/functions are available.
+      Uses myqueue when available, otherwise falls back to Slurm squeue.
+      Also removes slurm-<job-id>.out files from your detected home_path and
+      prints each deleted file.
       This command exits after cancelling the jobs.
 
   --auto-pub-gen
@@ -167,9 +169,15 @@ single_quote() {
 
 remote_lanta_login() {
   local command
-  local script
 
   command=$(shell_quote_args "$@")
+  remote_lanta_login_script "${command}"
+}
+
+remote_lanta_login_script() {
+  local command="$1"
+  local script
+
   script=$'shopt -s expand_aliases\n'
   script+=$'source /etc/profile >/dev/null 2>&1 || true\n'
   script+=$'source ~/.bash_profile >/dev/null 2>&1 || true\n'
@@ -179,6 +187,42 @@ remote_lanta_login() {
   script+="${command}"
 
   ssh -n "${user}@${TUNNEL_HOST}" "bash -lc $(single_quote "${script}")"
+}
+
+remote_queue_display_script() {
+  cat <<'EOF'
+queue_user="${USER:-}"
+if [[ -z "${queue_user}" ]]; then
+  queue_user=$(id -un)
+fi
+
+if type myqueue >/dev/null 2>&1; then
+  myqueue
+elif command -v squeue >/dev/null 2>&1; then
+  squeue -u "${queue_user}"
+else
+  printf "%s\n" "Neither myqueue nor squeue is available on LANTA." >&2
+  exit 127
+fi
+EOF
+}
+
+remote_queue_job_ids_script() {
+  cat <<'EOF'
+queue_user="${USER:-}"
+if [[ -z "${queue_user}" ]]; then
+  queue_user=$(id -un)
+fi
+
+if command -v squeue >/dev/null 2>&1; then
+  squeue -h -u "${queue_user}" -o "%A" | awk "NF {print \$1}" | sort -u
+elif type myqueue >/dev/null 2>&1; then
+  myqueue | awk "\$1 ~ /^[0-9]+/ {print \$1}" | sort -u
+else
+  printf "%s\n" "Neither myqueue nor squeue is available on LANTA." >&2
+  exit 127
+fi
+EOF
 }
 
 local_port_busy() {
@@ -395,7 +439,7 @@ normalize_running_time() {
 # Actions
 # ---------------------------------------------------------------------------
 show_remote_queue() {
-  remote_lanta_login myqueue
+  remote_lanta_login_script "$(remote_queue_display_script)"
 }
 
 show_remote_balance() {
@@ -407,19 +451,33 @@ clear_all_remote_jobs() {
   local job_ids
   local job_id
 
-  queue_output=$(remote_lanta_login myqueue)
+  queue_output=$(remote_lanta_login_script "$(remote_queue_display_script)")
   printf '%s\n' "${queue_output}"
 
-  job_ids=$(printf '%s\n' "${queue_output}" | awk '$1 ~ /^[0-9]+$/ {print $1}')
+  job_ids=$(remote_lanta_login_script "$(remote_queue_job_ids_script)")
   if [[ -z "${job_ids}" ]]; then
     printf '%s\n' 'No jobs found to cancel.'
+  else
+    for job_id in ${job_ids}; do
+      printf 'scancel %s\n' "${job_id}"
+      remote_lanta_login scancel "${job_id}"
+    done
+  fi
+
+  remove_home_slurm_outputs
+}
+
+remove_home_slurm_outputs() {
+  local deleted_files
+
+  deleted_files=$(remote_lanta_login find "${home_path}" -maxdepth 1 -type f -name 'slurm-[0-9]*.out' -delete -print)
+  if [[ -z "${deleted_files}" ]]; then
+    printf 'No slurm output files found in %s.\n' "${home_path}"
     return 0
   fi
 
-  for job_id in ${job_ids}; do
-    printf 'scancel %s\n' "${job_id}"
-    remote_lanta_login scancel "${job_id}"
-  done
+  printf '%s\n' 'Deleted slurm output files:'
+  printf '%s\n' "${deleted_files}"
 }
 
 auto_pub_gen() {
