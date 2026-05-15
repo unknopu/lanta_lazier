@@ -37,6 +37,7 @@ show_balance="false"
 init_env="false"
 clear_all="false"
 auto_pub_gen="false"
+slote_mode="false"
 
 home_path=""
 project_path=""
@@ -88,6 +89,13 @@ Options:
       Existing authorized_keys entries are detected and not duplicated.
       This command exits after installing the key.
 
+  --slote
+      Shortcut for the first two recommended steps:
+      1. --auto-pub-gen
+      2. --time 2:00 --init
+      If you are lazy to follow the order, run this, but don't forget to run
+      --clear-all after your job is done!!!!
+
   -bl, --balance
       Show your LANTA compute balance by running sbalance through the LANTA login shell.
       This command exits after displaying the balance.
@@ -107,21 +115,41 @@ Default behavior:
   prints the detected home_path and project_path, then exits.
 
 Examples:
-  ${SCRIPT_NAME} -u myname --auto-pub-gen
-  ${SCRIPT_NAME} --user myname
-  ${SCRIPT_NAME} -u myname --queue
-  ${SCRIPT_NAME} -u myname --clear-all
-  ${SCRIPT_NAME} -u myname --balance
-  ${SCRIPT_NAME} -u myname --init
-  ${SCRIPT_NAME} -u myname --time 2:00 --init
-  ${SCRIPT_NAME} -u myname --upload ./data
-  ${SCRIPT_NAME} -u myname --upload ./data /project/<project-id>/
+  Recommended running sequence:
+    1. First-time SSH setup:
+       ${SCRIPT_NAME} -u myname --auto-pub-gen
+
+    2. Start Jupyter for 2 hours:
+       ${SCRIPT_NAME} -u myname --time 2:00 --init
+
+    3. Clean up jobs and slurm output files after your job is done:
+       ${SCRIPT_NAME} -u myname --clear-all
+
+  If you are lazy to follow the order, run this, but don't forget to run
+  --clear-all after your job is done!!!!
+       ${SCRIPT_NAME} -u myname --slote
+
+  Other useful commands:
+       ${SCRIPT_NAME} --user myname
+       ${SCRIPT_NAME} -u myname --balance
+       ${SCRIPT_NAME} -u myname --queue
+       ${SCRIPT_NAME} -u myname --upload ./data
+       ${SCRIPT_NAME} -u myname --upload ./data /project/<project-id>/
 
 Curl examples:
-  curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --auto-pub-gen
-  curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --init
-  curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --time 2:00 --init
-  curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --clear-all
+  Recommended running sequence:
+    1. First-time SSH setup:
+       curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --auto-pub-gen
+
+    2. Start Jupyter for 2 hours:
+       curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --time 2:00 --init
+
+    3. Clean up jobs and slurm output files after your job is done:
+       curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --clear-all
+
+  If you are lazy to follow the order, run this, but don't forget to run
+  --clear-all after your job is done!!!!
+       curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --slote
 EOF
 }
 
@@ -340,6 +368,10 @@ parse_args() {
         auto_pub_gen="true"
         shift
         ;;
+      --slote)
+        slote_mode="true"
+        shift
+        ;;
       -bl|--balance)
         show_balance="true"
         shift
@@ -459,6 +491,7 @@ clear_all_remote_jobs() {
     printf '%s\n' 'No jobs found to cancel.'
   else
     for job_id in ${job_ids}; do
+      printf "\n\n======================"
       printf 'scancel %s\n' "${job_id}"
       remote_lanta_login scancel "${job_id}"
     done
@@ -563,6 +596,11 @@ account_suffix="$3"
 running_time="$4"
 home_path="$5"
 
+cleanup_staged_script() {
+  rm -f "${staged_script}"
+}
+trap cleanup_staged_script EXIT
+
 if [[ ! -f "${jupyter_gpu_script}" ]]; then
   printf 'Missing Jupyter GPU script: %s\n' "${jupyter_gpu_script}" >&2
   exit 1
@@ -633,6 +671,16 @@ upload_to_lanta() {
 # ---------------------------------------------------------------------------
 main() {
   parse_args "$@"
+
+  if [[ "${slote_mode}" == "true" ]]; then
+    auto_pub_gen
+    running_time="2:00"
+    load_lanta_paths
+    print_lanta_paths
+    normalize_running_time
+    submit_jupyter_gpu_script
+    exit 0
+  fi
 
   if [[ "${auto_pub_gen}" == "true" ]]; then
     auto_pub_gen
