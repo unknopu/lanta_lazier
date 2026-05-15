@@ -114,21 +114,6 @@ Default behavior:
   When no action option is provided, the script runs myquota on the transfer node,
   prints the detected home_path and project_path, then exits.
 
-Examples:
-  Recommended running sequence:
-    1. First-time SSH setup:
-       ${SCRIPT_NAME} -u myname --auto-pub-gen
-
-    2. Start Jupyter for 2 hours:
-       ${SCRIPT_NAME} -u myname --time 2:00 --init
-
-    3. Clean up jobs and slurm output files after your job is done:
-       ${SCRIPT_NAME} -u myname --clear-all
-
-  If you are lazy to follow the order, run this, but don't forget to run
-  --clear-all after your job is done!!!!
-       ${SCRIPT_NAME} -u myname --slote
-
   Other useful commands:
        ${SCRIPT_NAME} --user myname
        ${SCRIPT_NAME} -u myname --balance
@@ -147,9 +132,12 @@ Curl examples:
     3. Clean up jobs and slurm output files after your job is done:
        curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --clear-all
 
-  If you are lazy to follow the order, run this, but don't forget to run
-  --clear-all after your job is done!!!!
+*********************************************
+  If you are lazy to follow the order, run this, but don't forget to run 
+  "--clear-all" after your job is done!!!!
+*********************************************
        curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --slote
+
 EOF
 }
 
