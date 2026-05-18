@@ -30,6 +30,7 @@ user=""
 upload_src=""
 upload_target=""
 running_time=""
+pip_packages=""
 
 show_queue="false"
 show_balance="false"
@@ -88,6 +89,13 @@ Options:
       Existing authorized_keys entries are detected and not duplicated.
       This command exits after installing the key.
 
+  --pip "<package...>"
+      SSH to lanta.nstda.or.th and install the quoted pip package args.
+      Before running pip, the script loads Miniforge3/25.3.0-3 and cuda/11.8,
+      activates ~/venv/, prints which pip, then runs pip install <package...>.
+      Example: --pip "numpy pandas matplotlib"
+      This command exits after installing the packages.
+
   --slote
       Shortcut for the first two recommended steps:
       1. --auto-pub-gen
@@ -121,6 +129,7 @@ Default behavior:
        ${SCRIPT_NAME} --user myname
        ${SCRIPT_NAME} -u myname --balance
        ${SCRIPT_NAME} -u myname --queue
+       ${SCRIPT_NAME} -u myname --pip "numpy pandas matplotlib"
        ${SCRIPT_NAME} -u myname --upload ./data
        ${SCRIPT_NAME} -u myname --upload ./data /project/<project-id>/
 
@@ -132,7 +141,10 @@ Curl examples:
     2. Start Jupyter for 2 hours:
        curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --time 2:00 --init
 
-    3. Clean up jobs and slurm output files after your job is done:
+    Optional. Install pip packages into ~/venv/ on the internet-access node:
+       curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --pip "numpy pandas matplotlib"
+
+    3. Clean up jobs, slurm output files, and local forwarded ports after your job is done:
        curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --clear-all
 
 *********************************************
@@ -374,6 +386,11 @@ parse_args() {
         auto_pub_gen="true"
         shift
         ;;
+      --pip)
+        require_value "$1" "$#"
+        pip_packages="$2"
+        shift 2
+        ;;
       --slote)
         slote_mode="true"
         shift
@@ -509,6 +526,15 @@ else
   conda create --prefix ./venv python=3.10 -y
 fi
 
+eval "$(conda shell.bash hook)"
+conda activate "${expected_env}"
+printf 'running: which python\n'
+which python
+printf 'running: which pip\n'
+which pip
+printf 'running: pip install notebook ipykernel\n'
+pip install notebook ipykernel
+
 mkdir -p "${home_path}/workspace"
 printf 'workspace_path=%s/workspace\n' "${home_path}"
 REMOTE_SCRIPT
@@ -579,6 +605,51 @@ kill_local_forwarding_ports() {
       fi
     done
   done
+}
+
+install_pip_libraries() {
+  local pip_args=()
+  local remote_args
+
+  read -r -a pip_args <<<"${pip_packages}"
+  if (( ${#pip_args[@]} == 0 )); then
+    fail "Missing package names for --pip"
+  fi
+
+  remote_args=$(shell_quote_args "${pip_args[@]}")
+
+  printf "========= pip install =========\n"
+  printf 'ssh_target=%s@%s\n' "${user}" "${TUNNEL_HOST}"
+  printf 'packages=%s\n' "${pip_packages}"
+
+  ssh "${user}@${TUNNEL_HOST}" "bash -s -- ${remote_args}" <<'REMOTE_SCRIPT'
+shopt -s expand_aliases
+source /etc/profile >/dev/null 2>&1 || true
+if ! type ml >/dev/null 2>&1; then
+  source /usr/share/Modules/init/bash >/dev/null 2>&1 || true
+fi
+if ! type ml >/dev/null 2>&1; then
+  source /etc/profile.d/modules.sh >/dev/null 2>&1 || true
+fi
+
+set -euo pipefail
+
+printf 'running: ml load Miniforge3/25.3.0-3 cuda/11.8\n'
+ml load Miniforge3/25.3.0-3 cuda/11.8
+
+eval "$(conda shell.bash hook)"
+
+printf 'running: conda activate ~/venv/\n'
+conda activate ~/venv/
+
+printf 'running: which pip\n'
+which pip
+
+printf 'running: pip install'
+printf ' %q' "$@"
+printf '\n'
+pip install "$@"
+REMOTE_SCRIPT
 }
 
 auto_pub_gen() {
@@ -673,6 +744,12 @@ rm -f "${staged_script}"
 curl -fsSL "${jupyter_gpu_script_url}" -o "${staged_script}"
 sed -i -E "s/^#SBATCH[[:space:]]+-t[[:space:]]+[^[:space:]]+/#SBATCH -t ${running_time}/" "${staged_script}"
 sed -i -E 's/[[:space:]]+--notebook-dir=\$\(pwd\)//g' "${staged_script}"
+sed -i -E 's/^conda activate ~\/venv\//eval "$(conda shell.bash hook)"\
+conda activate ~\/venv\/\
+which python\
+which pip\
+which jupyter/' "${staged_script}"
+sed -i -E 's/^jupyter notebook/python -m jupyter notebook/' "${staged_script}"
 chmod 700 "${staged_script}"
 printf 'downloaded_script=%s\n' "${staged_script}"
 REMOTE_SCRIPT
@@ -804,6 +881,11 @@ main() {
 
   if [[ "${auto_pub_gen}" == "true" ]]; then
     auto_pub_gen
+    exit 0
+  fi
+
+  if [[ -n "${pip_packages}" ]]; then
+    install_pip_libraries
     exit 0
   fi
 

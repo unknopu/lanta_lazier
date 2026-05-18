@@ -13,12 +13,16 @@ USER=$(whoami)
 node=$(hostname -s)
 
 ml load Miniforge3/25.3.0-3 cuda/11.8
+eval "$(conda shell.bash hook)"
 conda activate ~/venv/
+which python
+which pip
+which jupyter
 
 # start a cluster instance and launch the jupyter server
 unset XDG_RUNTIME_DIR
 if [ "$SLURM_JOBTMP" != "" ]; then
 export XDG_RUNTIME_DIR=$SLURM_JOBTMP
 fi
-jupyter notebook --no-browser --port $port --ip=$node \
+python -m jupyter notebook --no-browser --port $port --ip=$node \
     --notebook-dir=/home/${USER}/workspace
