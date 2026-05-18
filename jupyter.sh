@@ -1,13 +1,12 @@
 #!/bin/bash
 #SBATCH -p gpu
-#SBATCH -N 1 -c 32
+#SBATCH -N 1 -c 16
 #SBATCH --mem=32G
 #SBATCH --gpus-per-node=1
 #SBATCH --ntasks-per-node=1
 #SBATCH -t 01:00:00
 #SBATCH -A zz992005
 #SBATCH -J jupyter
-#SBATCH --nodelist=lanta-g-004
 
 port=$(shuf -i 6000-9999 -n 1)
 USER=$(whoami)

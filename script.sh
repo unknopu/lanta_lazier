@@ -10,7 +10,7 @@ set -euo pipefail
 #   - show your compute balance
 #   - discover home/project paths from myquota
 #   - generate and install your local SSH public key
-#   - submit the shared Jupyter GPU job script
+#   - submit the GitHub-hosted Jupyter GPU job script
 #   - upload local files/directories to LANTA
 #
 # Run "./script.sh --help" for the full argument reference.
@@ -21,8 +21,7 @@ set -euo pipefail
 readonly SCRIPT_NAME="$(basename "$0")"
 readonly TRANSFER_HOST="transfer.lanta.nstda.or.th"
 readonly TUNNEL_HOST="lanta.nstda.or.th"
-readonly JUPYTER_GPU_SCRIPT="/project/zz992000-zdevb/Miniforge3/Jupyter_GPU/Jupyter_Script.sh"
-readonly JUPYTER_ACCOUNT_SUFFIX="2005"
+readonly JUPYTER_GPU_SCRIPT_URL="https://pangpuriye.info/jiaoben/jupyter_xianshika"
 
 # ---------------------------------------------------------------------------
 # Runtime state
@@ -65,11 +64,10 @@ Options:
       If [target] is not provided, the script uploads to your LANTA home path
       detected from myquota.
 
-  --time <HH:MM>
+  -t, --time <HH:MM>
       Runtime for the Jupyter GPU job submitted with --init.
       Runtime must be at least 30 minutes and no more than 24 hours.
-      If omitted, the script prompts and defaults to 1:00.
-      When running through curl | bash without terminal input, it uses 1:00.
+      If omitted, the script uses 1:00.
 
   -q, --queue
       Show your LANTA job queue by running myqueue when available, otherwise squeue.
@@ -104,10 +102,11 @@ Options:
       First initialize your LANTA home environment on lanta.nstda.or.th:
       load Miniforge3 and cuda/11.8, verify ./venv with conda env list,
       create ./venv with Python 3.10 if missing, and create workspace/.
-      Then check that the shared Jupyter GPU job script exists, copy it to
-      home_path, replace the account suffix 1xxx with 2005, and submit it with
-      sbatch. When the Jupyter URL appears, forward it to localhost:80, 8080,
-      8888, 9000, or 9999. The final output prints forwarded_url and token.
+      Then download jupyter.sh from GitHub to home_path through
+      lanta.nstda.or.th, set its runtime, and submit it with sbatch through
+      transfer.lanta.nstda.or.th. When the Jupyter URL appears, forward it to
+      localhost:80, 8080, 8888, 9000, or 9999. The final output prints
+      forwarded_url and token.
       This command exits after initialization.
 
   -h, --help
@@ -282,9 +281,9 @@ forward_jupyter_port() {
   if [[ "${tunnel_spec}" =~ ^[0-9]+:([^:]+):([0-9]+)$ ]]; then
     target_host="${BASH_REMATCH[1]}"
     remote_port="${BASH_REMATCH[2]}"
-  elif [[ "${jupyter_url}" =~ ^http://127[.]0[.]0[.]1:([0-9]+)/ ]]; then
-    target_host="127.0.0.1"
-    remote_port="${BASH_REMATCH[1]}"
+  elif [[ "${jupyter_url}" =~ ^http://([^/:]+):([0-9]+)/ ]]; then
+    target_host="${BASH_REMATCH[1]}"
+    remote_port="${BASH_REMATCH[2]}"
   else
     printf 'Could not detect Jupyter port from URL: %s\n' "${jupyter_url}" >&2
     return 1
@@ -298,7 +297,7 @@ forward_jupyter_port() {
 
     printf 'forwarding localhost:%s -> %s:%s through %s\n' "${local_port}" "${target_host}" "${remote_port}" "${TUNNEL_HOST}"
     if ssh -f -N -o ExitOnForwardFailure=yes -L "${local_port}:${target_host}:${remote_port}" "${user}@${TUNNEL_HOST}"; then
-      forwarded_url="${jupyter_url/127.0.0.1:${remote_port}/localhost:${local_port}}"
+      forwarded_url="${jupyter_url/${target_host}:${remote_port}/localhost:${local_port}}"
       printf "\n\n\n==================== YOUR URL ====================\n"
       printf 'forwarded_url=%s\n' "${forwarded_url}"
       if [[ "${forwarded_url}" =~ ${token_regex} ]]; then
@@ -342,7 +341,7 @@ parse_args() {
           shift 2
         fi
         ;;
-      --time)
+      -t|--time)
         require_value "$1" "$#"
         running_time="$2"
         shift 2
@@ -409,21 +408,7 @@ normalize_running_time() {
   local minutes_value
 
   if [[ -z "${running_time}" ]]; then
-    printf "\n--------------------\n"
-    printf 'please specify running time (default 1h; hh:mm):\n'
-    if [[ -t 0 ]]; then
-      if ! read -r running_time; then
-        running_time=""
-      fi
-    elif ! { read -r running_time </dev/tty; } 2>/dev/null; then
-      running_time=""
-    else
-      running_time=""
-    fi
-
-    if [[ -z "${running_time}" ]]; then
-      running_time="1:00"
-    fi
+    running_time="1:00"
   fi
 
   if [[ ! "${running_time}" =~ ^([0-9]{1,2}):([0-9]{1,2})$ ]]; then
@@ -615,40 +600,58 @@ auto_pub_gen() {
 
 submit_jupyter_gpu_script() {
   local remote_output
+  local remote_output_file
   local staged_script
 
-  staged_script="${home_path}/$(basename "${JUPYTER_GPU_SCRIPT}")"
+  staged_script="${home_path}/jupyter.sh"
 
   printf "========= init env =========\n"
-  printf 'submitting Jupyter GPU script: %s\n' "${JUPYTER_GPU_SCRIPT}"
+  printf 'downloading Jupyter GPU script: %s\n' "${JUPYTER_GPU_SCRIPT_URL}"
+  printf 'download host: %s\n' "${TUNNEL_HOST}"
+  printf 'submit host: %s\n' "${TRANSFER_HOST}"
   printf 'staging script at: %s\n' "${staged_script}"
-  printf 'replacing account suffix 1xxx with: %s\n' "${JUPYTER_ACCOUNT_SUFFIX}"
   printf 'setting running time to: %s:00\n' "${running_time}"
 
-  remote_output=$(remote bash -s -- "${JUPYTER_GPU_SCRIPT}" "${staged_script}" "${JUPYTER_ACCOUNT_SUFFIX}" "${running_time}:00" "${home_path}" <<'REMOTE_SCRIPT'
+  ssh "${user}@${TUNNEL_HOST}" "bash -s -- $(single_quote "${JUPYTER_GPU_SCRIPT_URL}") $(single_quote "${staged_script}") $(single_quote "${running_time}:00")" <<'REMOTE_SCRIPT'
 set -euo pipefail
 
-jupyter_gpu_script="$1"
+jupyter_gpu_script_url="$1"
 staged_script="$2"
-account_suffix="$3"
-running_time="$4"
-home_path="$5"
+running_time="$3"
+
+if ! command -v curl >/dev/null 2>&1; then
+  printf '%s\n' 'curl is required to download jupyter.sh on LANTA.' >&2
+  exit 1
+fi
+
+curl -fsSL "${jupyter_gpu_script_url}" -o "${staged_script}"
+sed -i -E "s/^#SBATCH[[:space:]]+-t[[:space:]]+[^[:space:]]+/#SBATCH -t ${running_time}/" "${staged_script}"
+chmod 700 "${staged_script}"
+printf 'downloaded_script=%s\n' "${staged_script}"
+REMOTE_SCRIPT
+
+  remote_output_file=$(mktemp "${TMPDIR:-/tmp}/${SCRIPT_NAME}.jupyter.XXXXXX")
+  trap 'rm -f "${remote_output_file}"' RETURN
+
+  printf 'submitting staged script on %s...\n' "${TRANSFER_HOST}"
+  remote bash -s -- "${staged_script}" "${home_path}" <<'REMOTE_SCRIPT' | tee "${remote_output_file}"
+set -euo pipefail
+
+staged_script="$1"
+home_path="$2"
 
 cleanup_staged_script() {
   rm -f "${staged_script}"
 }
 trap cleanup_staged_script EXIT
 
-if [[ ! -f "${jupyter_gpu_script}" ]]; then
-  printf 'Missing Jupyter GPU script: %s\n' "${jupyter_gpu_script}" >&2
+if [[ ! -f "${staged_script}" ]]; then
+  printf 'Missing staged Jupyter script: %s\n' "${staged_script}" >&2
   exit 1
 fi
 
-cp "${jupyter_gpu_script}" "${staged_script}"
-sed -i "s/1xxx/${account_suffix}/g" "${staged_script}"
-sed -i -E "s/^#SBATCH[[:space:]]+-t[[:space:]]+[^[:space:]]+/#SBATCH -t ${running_time}/" "${staged_script}"
-
 cd "${home_path}"
+printf 'running: sbatch %s\n' "${staged_script}"
 sbatch_output=$(sbatch "${staged_script}")
 printf '%s\n' "${sbatch_output}"
 
@@ -659,16 +662,20 @@ if [[ -z "${job_id}" ]]; then
 fi
 
 out_file="slurm-${job_id}.out"
-url_pattern='http://127[.]0[.]0[.]1:[0-9]+/(tree|lab)[?]token=[^[:space:]]+'
+url_pattern='http://[^[:space:]]+[?&]token=[^[:space:]]+'
 
 printf "======================\n"
 printf 'job_id=%s\n' "${job_id}"
-printf 'slurm_output=%s/%s\n' "${home_path}" "${out_file}"
 printf '%s\n' 'waiting for Jupyter URL...'
 
-for _ in $(seq 1 60); do
+for attempt in $(seq 1 450); do
   if [[ -f "${out_file}" ]]; then
-    url=$(grep -Eo "${url_pattern}" "${out_file}" | head -n 1 || true)
+    urls=$(grep -Eo "${url_pattern}" "${out_file}" || true)
+    url=$(printf '%s\n' "${urls}" | grep -Ev '^http://(localhost|127[.]0[.]0[.]1):' | head -n 1 || true)
+    if [[ -z "${url}" ]]; then
+      url=$(printf '%s\n' "${urls}" | head -n 1 || true)
+    fi
+
     if [[ -n "${url}" ]]; then
       tunnel_spec=$(grep -Eo 'ssh[[:space:]]+-L[[:space:]]+[0-9]+:[^:[:space:]]+:[0-9]+' "${out_file}" | head -n 1 | awk '{print $3}' || true)
       cat "${out_file}"
@@ -681,6 +688,22 @@ for _ in $(seq 1 60); do
       exit 0
     fi
   fi
+
+  job_state=$(squeue -h -j "${job_id}" -o "%T" 2>/dev/null | head -n 1 || true)
+  if [[ -z "${job_state}" && -f "${out_file}" ]]; then
+    cat "${out_file}"
+    printf '%s\n' 'Jupyter job ended before a notebook URL was found.' >&2
+    exit 1
+  fi
+
+  if (( attempt % 15 == 0 )); then
+    if [[ -n "${job_state}" ]]; then
+      printf 'still waiting for Jupyter URL; job_state=%s\n' "${job_state}"
+    else
+      printf '%s\n' 'still waiting for Jupyter URL; job is not visible in squeue yet'
+    fi
+  fi
+
   sleep 2
 done
 
@@ -688,10 +711,14 @@ if [[ -f "${out_file}" ]]; then
   cat "${out_file}"
 fi
 
-printf '%s\n' 'Jupyter URL not found yet. Check the slurm output file above after the job starts.'
+printf '%s\n' 'Jupyter URL was not found before the wait timeout.' >&2
+exit 1
 REMOTE_SCRIPT
-)
-  printf '%s\n' "${remote_output}"
+
+  remote_output=$(cat "${remote_output_file}")
+  rm -f "${remote_output_file}"
+  trap - RETURN
+
   forward_jupyter_port "${remote_output}"
   printf 'everything is now set, good luck!\n'
 }
