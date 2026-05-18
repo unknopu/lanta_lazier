@@ -101,10 +101,13 @@ Options:
       This command exits after displaying the balance.
 
   --init
-      Check that the shared Jupyter GPU job script exists, copy it to home_path,
-      replace the account suffix 1xxx with 2005, then submit it with sbatch.
-      When the Jupyter URL appears, forward it to localhost:80, 8080, 8888,
-      9000, or 9999. The final output prints forwarded_url and token.
+      First initialize your LANTA home environment on lanta.nstda.or.th:
+      load Miniforge3 and cuda/11.8, verify ./venv with conda env list,
+      create ./venv with Python 3.10 if missing, and create workspace/.
+      Then check that the shared Jupyter GPU job script exists, copy it to
+      home_path, replace the account suffix 1xxx with 2005, and submit it with
+      sbatch. When the Jupyter URL appears, forward it to localhost:80, 8080,
+      8888, 9000, or 9999. The final output prints forwarded_url and token.
       This command exits after initialization.
 
   -h, --help
@@ -466,6 +469,53 @@ show_remote_balance() {
   remote_lanta_login sbalance
 }
 
+initialize_home_environment() {
+  local expected_env
+  local init_script
+
+  expected_env="${home_path}/venv"
+
+  printf "========= initialize home environment =========\n"
+  printf 'ssh_target=%s@%s\n' "${user}" "${TUNNEL_HOST}"
+  printf 'home_path=%s\n' "${home_path}"
+  printf 'venv_path=%s\n' "${expected_env}"
+  printf 'workspace_path=%s/workspace\n' "${home_path}"
+
+  init_script=$(cat <<'REMOTE_SCRIPT'
+home_path="$1"
+expected_env="$2"
+
+shopt -s expand_aliases
+source /etc/profile >/dev/null 2>&1 || true
+if ! type ml >/dev/null 2>&1; then
+  source /usr/share/Modules/init/bash >/dev/null 2>&1 || true
+fi
+if ! type ml >/dev/null 2>&1; then
+  source /etc/profile.d/modules.sh >/dev/null 2>&1 || true
+fi
+
+set -euo pipefail
+
+cd "${home_path}"
+printf 'running: ml load Miniforge3/25.3.0-3 cuda/11.8\n'
+ml load Miniforge3/25.3.0-3 cuda/11.8
+
+printf 'running: conda env list | grep %s\n' "${expected_env}"
+if conda env list | grep -F "${expected_env}"; then
+  printf 'confirmation\n'
+else
+  printf 'running: conda create --prefix ./venv python=3.10 -y\n'
+  conda create --prefix ./venv python=3.10 -y
+fi
+
+mkdir -p "${home_path}/workspace"
+printf 'workspace_path=%s/workspace\n' "${home_path}"
+REMOTE_SCRIPT
+)
+
+  ssh "${user}@${TUNNEL_HOST}" "bash -s -- $(single_quote "${home_path}") $(single_quote "${expected_env}")" <<<"${init_script}"
+}
+
 clear_all_remote_jobs() {
   local queue_output
   local job_ids
@@ -665,6 +715,7 @@ main() {
     running_time="2:00"
     load_lanta_paths
     print_lanta_paths
+    initialize_home_environment
     normalize_running_time
     submit_jupyter_gpu_script
     exit 0
@@ -695,6 +746,7 @@ main() {
 
   if [[ "${init_env}" == "true" ]]; then
     normalize_running_time
+    initialize_home_environment
     submit_jupyter_gpu_script
     exit 0
   fi

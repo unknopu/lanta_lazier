@@ -3,3 +3,5 @@ Jupyter_Script.sh
 TA_Arther_Test_Script
 **/.DS_*
 .DS_*
+jupyter_gpu.sh
+note.md
