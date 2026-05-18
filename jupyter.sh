@@ -14,7 +14,7 @@ USER=$(whoami)
 node=$(hostname -s)
 
 ml load Miniforge3/25.3.0-3 cuda/11.8
-conda activate venv
+conda activate ~/venv/
 
 # start a cluster instance and launch the jupyter server
 unset XDG_RUNTIME_DIR
