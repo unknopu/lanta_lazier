@@ -20,5 +20,5 @@ unset XDG_RUNTIME_DIR
 if [ "$SLURM_JOBTMP" != "" ]; then
 export XDG_RUNTIME_DIR=$SLURM_JOBTMP
 fi
-jupyter notebook --no-browser --port $port --notebook-dir=$(pwd) --ip=$node \
+jupyter notebook --no-browser --port $port --ip=$node \
     --notebook-dir=/home/${USER}/workspace

@@ -624,8 +624,10 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 1
 fi
 
+rm -f "${staged_script}"
 curl -fsSL "${jupyter_gpu_script_url}" -o "${staged_script}"
 sed -i -E "s/^#SBATCH[[:space:]]+-t[[:space:]]+[^[:space:]]+/#SBATCH -t ${running_time}/" "${staged_script}"
+sed -i -E 's/[[:space:]]+--notebook-dir=\$\(pwd\)//g' "${staged_script}"
 chmod 700 "${staged_script}"
 printf 'downloaded_script=%s\n' "${staged_script}"
 REMOTE_SCRIPT
