@@ -61,7 +61,7 @@ Required:
 
 Options:
   --upload, -upload <source> [target]
-      Upload a local file or directory to LANTA with scp -r.
+      Upload a local file or directory to LANTA through lanta.nstda.or.th with scp -r.
       If [target] is not provided, the script uploads to your LANTA home path
       detected from myquota.
 
@@ -143,6 +143,9 @@ Curl examples:
 
     Optional. Install pip packages into ~/venv/ on the internet-access node:
        curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --pip "numpy pandas matplotlib"
+
+    Optional. Upload a local file through lanta.nstda.or.th:
+       curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u ub888 --upload ./yolo.pt /home/ub888/
 
     3. Clean up jobs, slurm output files, and local forwarded ports after your job is done:
        curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --clear-all
@@ -857,7 +860,7 @@ upload_to_lanta() {
     upload_target="${home_path}"
   fi
 
-  scp -r "${upload_src}" "${user}@${TRANSFER_HOST}:${upload_target}"
+  scp -r "${upload_src}" "${user}@${TUNNEL_HOST}:${upload_target}"
 }
 
 # ---------------------------------------------------------------------------
