@@ -315,6 +315,21 @@ forward_jupyter_port() {
   return 1
 }
 
+remove_jupyter_slurm_output() {
+  local remote_output="$1"
+  local job_id
+  local slurm_file
+
+  job_id=$(printf '%s\n' "${remote_output}" | sed -n 's/^job_id=//p' | sed -n '1p')
+  if [[ -z "${job_id}" ]]; then
+    return 0
+  fi
+
+  slurm_file="${home_path}/slurm-${job_id}.out"
+  remote rm -f "${slurm_file}"
+  printf 'removed_slurm_output=%s\n' "${slurm_file}"
+}
+
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
@@ -514,7 +529,7 @@ clear_all_remote_jobs() {
     printf '%s\n' 'No jobs found to cancel.'
   else
     for job_id in ${job_ids}; do
-      printf "\n\n======================"
+      printf "\n\n======================\n"
       printf 'scancel %s\n' "${job_id}"
       remote_lanta_login scancel "${job_id}"
     done
@@ -721,7 +736,12 @@ REMOTE_SCRIPT
   rm -f "${remote_output_file}"
   trap - RETURN
 
-  forward_jupyter_port "${remote_output}"
+  if forward_jupyter_port "${remote_output}"; then
+    remove_jupyter_slurm_output "${remote_output}"
+  else
+    return 1
+  fi
+
   printf 'everything is now set, good luck!\n'
 }
 
