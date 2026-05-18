@@ -77,6 +77,7 @@ Options:
       Show your LANTA job queue, then cancel every listed job with scancel.
       Uses myqueue when available, otherwise falls back to Slurm squeue.
       Also removes slurm-<job-id>.out files from your detected home_path and
+      kills local processes listening on ports 80, 8080, 8888, 9000, and 9999,
       prints each deleted file.
       This command exits after cancelling the jobs.
 
@@ -536,6 +537,7 @@ clear_all_remote_jobs() {
   fi
 
   remove_home_slurm_outputs
+  kill_local_forwarding_ports
 }
 
 remove_home_slurm_outputs() {
@@ -549,6 +551,34 @@ remove_home_slurm_outputs() {
 
   printf '%s\n' 'Deleted slurm output files:'
   printf '%s\n' "${deleted_files}"
+}
+
+kill_local_forwarding_ports() {
+  local local_port
+  local pids
+  local pid
+
+  if ! command -v lsof >/dev/null 2>&1; then
+    printf '%s\n' 'lsof is not available; skipping local port cleanup.' >&2
+    return 0
+  fi
+
+  for local_port in 80 8080 8888 9000 9999; do
+    pids=$(lsof -tiTCP:"${local_port}" -sTCP:LISTEN 2>/dev/null || true)
+    if [[ -z "${pids}" ]]; then
+      printf 'No local process found on port %s.\n' "${local_port}"
+      continue
+    fi
+
+    for pid in ${pids}; do
+      printf 'kill -9 %s # local port %s\n' "${pid}" "${local_port}"
+      if kill -9 "${pid}" 2>/dev/null; then
+        printf 'killed local process %s on port %s.\n' "${pid}" "${local_port}"
+      else
+        printf 'Could not kill local process %s on port %s.\n' "${pid}" "${local_port}" >&2
+      fi
+    done
+  done
 }
 
 auto_pub_gen() {
@@ -758,6 +788,8 @@ upload_to_lanta() {
 # ---------------------------------------------------------------------------
 main() {
   parse_args "$@"
+  load_lanta_paths
+  print_lanta_paths
 
   if [[ "${slote_mode}" == "true" ]]; then
     auto_pub_gen
@@ -774,9 +806,6 @@ main() {
     auto_pub_gen
     exit 0
   fi
-
-  load_lanta_paths
-  print_lanta_paths
 
   if [[ "${show_queue}" == "true" ]]; then
     show_remote_queue
