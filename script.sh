@@ -138,11 +138,15 @@ Default behavior:
        ${SCRIPT_NAME} -u myname --balance
        ${SCRIPT_NAME} -u myname --queue
        ${SCRIPT_NAME} -u myname --cmd "ollama list"
+       bash ${SCRIPT_NAME} -u myname --cmd "ollama list"
        ${SCRIPT_NAME} -u myname --pip "numpy pandas matplotlib"
        ${SCRIPT_NAME} -u myname --upload ./data
        ${SCRIPT_NAME} -u myname --upload ./data /project/<project-id>/
 
 Curl examples:
+  The standalone -- after bash -s belongs to bash, not to this script.
+  For local runs, use: bash ${SCRIPT_NAME} -u myname --cmd "ollama list"
+
   Recommended running sequence:
     1. First-time SSH setup:
        curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --auto-pub-gen
@@ -364,6 +368,9 @@ remove_jupyter_slurm_output() {
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --)
+        shift
+        ;;
       -h|--help)
         usage
         exit 0
@@ -893,6 +900,12 @@ upload_to_lanta() {
 # ---------------------------------------------------------------------------
 main() {
   parse_args "$@"
+
+  if [[ -n "${remote_command}" ]]; then
+    run_remote_command
+    exit 0
+  fi
+
   load_lanta_paths
   print_lanta_paths
 
@@ -914,11 +927,6 @@ main() {
 
   if [[ -n "${pip_packages}" ]]; then
     install_pip_libraries
-    exit 0
-  fi
-
-  if [[ -n "${remote_command}" ]]; then
-    run_remote_command
     exit 0
   fi
 
