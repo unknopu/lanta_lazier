@@ -110,7 +110,7 @@ Options:
   --init
       First initialize your LANTA home environment on lanta.nstda.or.th:
       load Miniforge3 and cuda/11.8, verify ./venv with conda env list,
-      create ./venv with Python 3.10 if missing, and create workspace/.
+      create ./venv with Python 3.6.9 if missing, and create workspace/.
       Then download jupyter.sh from GitHub to home_path through
       lanta.nstda.or.th, set its runtime, and submit it with sbatch through
       transfer.lanta.nstda.or.th. When the Jupyter URL appears, forward it to
@@ -525,8 +525,8 @@ printf 'running: conda env list | grep %s\n' "${expected_env}"
 if conda env list | grep -F "${expected_env}"; then
   printf 'confirmation\n'
 else
-  printf 'running: conda create --prefix ./venv python=3.10 -y\n'
-  conda create --prefix ./venv python=3.10 -y
+  printf 'running: conda create --prefix ./venv python=3.6.9 -y\n'
+  conda create --prefix ./venv python=3.6.9 -y
 fi
 
 eval "$(conda shell.bash hook)"
