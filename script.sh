@@ -92,7 +92,7 @@ Options:
   --pip "<package...>"
       SSH to lanta.nstda.or.th and install the quoted pip package args.
       Before running pip, the script loads Miniforge3/25.3.0-3 and cuda/11.8,
-      activates ~/venv/, prints which pip, then runs pip install <package...>.
+      activates ~/venv3.6.9/, prints which pip, then runs pip install <package...>.
       Example: --pip "numpy pandas matplotlib"
       This command exits after installing the packages.
 
@@ -109,8 +109,8 @@ Options:
 
   --init
       First initialize your LANTA home environment on lanta.nstda.or.th:
-      load Miniforge3 and cuda/11.8, verify ./venv with conda env list,
-      create ./venv with Python 3.6.9 if missing, and create workspace/.
+      load Miniforge3 and cuda/11.8, verify ./venv3.6.9 with conda env list,
+      create ./venv3.6.9 with Python 3.6.9 if missing, and create workspace/.
       Then download jupyter.sh from GitHub to home_path through
       lanta.nstda.or.th, set its runtime, and submit it with sbatch through
       transfer.lanta.nstda.or.th. When the Jupyter URL appears, forward it to
@@ -141,7 +141,7 @@ Curl examples:
     2. Start Jupyter for 2 hours:
        curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --time 2:00 --init
 
-    Optional. Install pip packages into ~/venv/ on the internet-access node:
+    Optional. Install pip packages into ~/venv3.6.9/ on the internet-access node:
        curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --pip "numpy pandas matplotlib"
 
     Optional. Upload a local file through lanta.nstda.or.th:
@@ -494,7 +494,7 @@ initialize_home_environment() {
   local expected_env
   local init_script
 
-  expected_env="${home_path}/venv"
+  expected_env="${home_path}/venv3.6.9"
 
   printf "========= initialize home environment =========\n"
   printf 'ssh_target=%s@%s\n' "${user}" "${TUNNEL_HOST}"
@@ -525,8 +525,8 @@ printf 'running: conda env list | grep %s\n' "${expected_env}"
 if conda env list | grep -F "${expected_env}"; then
   printf 'confirmation\n'
 else
-  printf 'running: conda create --prefix ./venv python=3.6.9 -y\n'
-  conda create --prefix ./venv python=3.6.9 -y
+  printf 'running: conda create --prefix ./venv3.6.9 python=3.6.9 -y\n'
+  conda create --prefix ./venv3.6.9 python=3.6.9 -y
 fi
 
 eval "$(conda shell.bash hook)"
@@ -642,8 +642,8 @@ ml load Miniforge3/25.3.0-3 cuda/11.8
 
 eval "$(conda shell.bash hook)"
 
-printf 'running: conda activate ~/venv/\n'
-conda activate ~/venv/
+printf 'running: conda activate ~/venv3.6.9/\n'
+conda activate ~/venv3.6.9/
 
 printf 'running: which pip\n'
 which pip
@@ -748,7 +748,7 @@ curl -fsSL "${jupyter_gpu_script_url}" -o "${staged_script}"
 sed -i -E "s/^#SBATCH[[:space:]]+-t[[:space:]]+[^[:space:]]+/#SBATCH -t ${running_time}/" "${staged_script}"
 sed -i -E 's/[[:space:]]+--notebook-dir=\$\(pwd\)//g' "${staged_script}"
 sed -i -E 's/^conda activate ~\/venv\//eval "$(conda shell.bash hook)"\
-conda activate ~\/venv\/\
+conda activate ~\/venv3.6.9\/\
 which python\
 which pip\
 which jupyter/' "${staged_script}"
