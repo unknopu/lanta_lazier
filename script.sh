@@ -12,6 +12,7 @@ set -euo pipefail
 #   - generate and install your local SSH public key
 #   - submit the GitHub-hosted Jupyter GPU job script
 #   - upload local files/directories to LANTA
+#   - run a quoted command on the LANTA login shell
 #
 # Run "./script.sh --help" for the full argument reference.
 
@@ -31,6 +32,7 @@ upload_src=""
 upload_target=""
 running_time=""
 pip_packages=""
+remote_command=""
 
 show_queue="false"
 show_balance="false"
@@ -96,6 +98,12 @@ Options:
       Example: --pip "numpy pandas matplotlib"
       This command exits after installing the packages.
 
+  --cmd "<command>"
+      SSH to lanta.nstda.or.th, load your login shell profile files, then run
+      the quoted command.
+      Example: --cmd "ollama list"
+      This command exits after the command finishes.
+
   --slote
       Shortcut for the first two recommended steps:
       1. --auto-pub-gen
@@ -129,6 +137,7 @@ Default behavior:
        ${SCRIPT_NAME} --user myname
        ${SCRIPT_NAME} -u myname --balance
        ${SCRIPT_NAME} -u myname --queue
+       ${SCRIPT_NAME} -u myname --cmd "ollama list"
        ${SCRIPT_NAME} -u myname --pip "numpy pandas matplotlib"
        ${SCRIPT_NAME} -u myname --upload ./data
        ${SCRIPT_NAME} -u myname --upload ./data /project/<project-id>/
@@ -143,6 +152,9 @@ Curl examples:
 
     Optional. Install pip packages into ~/venv3.6.9/ on the internet-access node:
        curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --pip "numpy pandas matplotlib"
+
+    Optional. Run a command on lanta.nstda.or.th:
+       curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u myname --cmd "ollama list"
 
     Optional. Upload a local file through lanta.nstda.or.th:
        curl -fsSL https://pangpuriye.info/jiaoben/lanta | bash -s -- -u ub888 --upload ./yolo.pt /home/ub888/
@@ -394,6 +406,11 @@ parse_args() {
         pip_packages="$2"
         shift 2
         ;;
+      --cmd)
+        require_value "$1" "$#"
+        remote_command="$2"
+        shift 2
+        ;;
       --slote)
         slote_mode="true"
         shift
@@ -488,6 +505,14 @@ show_remote_queue() {
 
 show_remote_balance() {
   remote_lanta_login sbalance
+}
+
+run_remote_command() {
+  printf "========= remote command =========\n"
+  printf 'ssh_target=%s@%s\n' "${user}" "${TUNNEL_HOST}"
+  printf 'command=%s\n' "${remote_command}"
+
+  remote_lanta_login_script "${remote_command}"
 }
 
 initialize_home_environment() {
@@ -889,6 +914,11 @@ main() {
 
   if [[ -n "${pip_packages}" ]]; then
     install_pip_libraries
+    exit 0
+  fi
+
+  if [[ -n "${remote_command}" ]]; then
+    run_remote_command
     exit 0
   fi
 
