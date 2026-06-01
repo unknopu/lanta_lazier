@@ -22,7 +22,8 @@ set -euo pipefail
 readonly SCRIPT_NAME="$(basename "$0")"
 readonly TRANSFER_HOST="transfer.lanta.nstda.or.th"
 readonly TUNNEL_HOST="lanta.nstda.or.th"
-readonly JUPYTER_GPU_SCRIPT_URL="https://pangpuriye.info/jiaoben/jupyter_xianshika"
+readonly JUPYTER_GPU_SCRIPT_URL="https://raw.githubusercontent.com/unknopu/lanta_lazier/refs/heads/main/jupyter.sh"
+# readonly JUPYTER_GPU_SCRIPT_URL="https://pangpuriye.info/jiaoben/jupyter_xianshika"
 
 # ---------------------------------------------------------------------------
 # Runtime state
